@@ -47,6 +47,10 @@ subprojects {
         mergeModel group : "org.intermine", name: "intermine-objectstore", version: System.getProperty("imVersion")
     }
 
+    compileJava {
+        options.deprecation = true
+    }
+
     dbModelConfig {
         objectStoreName = "os.bio-test"
         modelName = "genomic"
