@@ -12,7 +12,9 @@ package org.intermine.bio.postprocess;
 
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 import org.intermine.bio.util.ClobAccessReverseComplement;
@@ -165,16 +167,27 @@ public class TransferSequencesProcess extends PostProcessor {
     protected int transferForChromosomeOrSupercontig(Chromosome chr, Supercontig sup) throws IllegalAccessException, ObjectStoreException {
         long startTime = System.currentTimeMillis();
 
-        boolean isChromosome = (chr != null);
+        final boolean isChromosome = (chr != null);
 
         int id = 0;
         String primaryIdentifier = null;
+        Sequence contigSequence = null; // temp so we can make final
         if (isChromosome) {
             id = chr.getId();
             primaryIdentifier = chr.getPrimaryIdentifier();
+            contigSequence = chr.getSequence();
         } else {
             id = sup.getId();
             primaryIdentifier = sup.getPrimaryIdentifier();
+            contigSequence = sup.getSequence();
+        }
+        // check our contig
+        if (contigSequence.getLength() == 0) {
+            throw new RuntimeException("Chromosome/Supercontig " + id + " has zero length.");
+        }
+        final ClobAccess contigResidues = contigSequence.getResidues();
+        if (contigResidues.length() == 0) {
+            throw new RuntimeException("Chromosome/Supercontig " + id + " has no residues.");
         }
 
         Query q = new Query();
@@ -228,86 +241,76 @@ public class TransferSequencesProcess extends PostProcessor {
         indexesToCreate.add(qcSub);
         ((ObjectStoreInterMineImpl) osw.getObjectStore()).precompute(q, indexesToCreate, Constants.PRECOMPUTE_CATEGORY);
 
-        // run the query
+        // run the query, storing the features and locations in maps for parallel processing after they're collected
+        Map<Integer,SequenceFeature> features = new ConcurrentHashMap<>();
+        Map<Integer,Location> locations = new ConcurrentHashMap<>();
         Results results = osw.getObjectStore().execute(q, 1000, true, true, true);
         int numResults = results.size();
         if (numResults > 0) {
-            int count = 0;
             long start = System.currentTimeMillis();
-            osw.beginTransaction();
             for (Object obj : results.asList()) {
                 ResultsRow rr = (ResultsRow) obj;
                 SequenceFeature feature = (SequenceFeature) rr.get(0);
                 Location location = (Location) rr.get(1);
-                
-                if (PostProcessUtil.isInstance(model, feature, "ChromosomeBand")) {
-                    continue;
-                }
-                
-                if (PostProcessUtil.isInstance(model, feature, "SNP")) {
-                    continue;
-                }
-                
-                // if we set here the transcripts, using start and end locations,
-                // we won't be using the transferToTranscripts method (collating the exons)
-                if (PostProcessUtil.isInstance(model, feature, "Transcript")) {
-                    continue;
-                }
-                
-                // CDSs might have multiple locations, process in transferToCDSs() instead
-                if (PostProcessUtil.isInstance(model, feature, "CDS")) {
-                    continue;
-                }
-                
-                /**
-                 * In human intermine, SNP is not a sequence alteration, which I think is wrong
-                 * But here are the kinds of types that are alterations:
-                 *
-                 *      Deletion
-                 *      Genetic Marker
-                 *      Indel
-                 *      Insertion
-                 *      SNV
-                 *      Substitution
-                 *      Tandem Repeat
-                 */
-                if (PostProcessUtil.isInstance(model, feature, "SequenceAlteration")) {
-                    continue;
-                }
-                
+                // skip certain features
+                if (PostProcessUtil.isInstance(model, feature, "ChromosomeBand")) continue;
+                if (PostProcessUtil.isInstance(model, feature, "SNP")) continue;
+                if (PostProcessUtil.isInstance(model, feature, "Transcript")) continue; // done in transferToTranscripts()
+                if (PostProcessUtil.isInstance(model, feature, "CDS")) continue; // done in transferToCDSs()
+                if (PostProcessUtil.isInstance(model, feature, "SequenceAlteration")) continue; // not applicable
+                // bail if a gene is too long
                 if (feature instanceof Gene) {
                     Gene gene = (Gene) feature;
                     if (gene.getLength() != null && gene.getLength().intValue() > 2000000) {
-                        LOG.warn("gene too long in transferToSequenceFeatures() ignoring: " + gene);
+                        LOG.warn("Gene too long in transferToSequenceFeatures() ignoring: " + gene);
                         continue;
                     }
                 }
-                
-                ClobAccess featureSeq = null;
-                if (isChromosome) {
-                    featureSeq = getSubSequence(chr.getSequence(), location);
-                } else {
-                    featureSeq = getSubSequence(sup.getSequence(), location);
-                }
-                
-                if (featureSeq == null) {
-                    // probably the location is out of range
-                    LOG.info("Could not get feature sequence for location: " + location);
-                    continue;
-                }
-                
-                Sequence sequence = (Sequence) DynamicUtil.createObject(Collections.singleton(Sequence.class));
-                sequence.setResidues(featureSeq);
-                sequence.setLength(featureSeq.length());
+                // store for parallel work below
+                features.put(feature.getId(), feature);
+                locations.put(feature.getId(), location);
+            }
+
+            //////////////////////////////////////////////////////////////////////////
+            // spin through the features and locations, building the sequences
+            Map<Integer,Sequence> sequences = new ConcurrentHashMap<>();
+            Map<Integer,SequenceFeature> clones = new ConcurrentHashMap<>();
+            features.keySet().parallelStream().forEach(featureId -> {
+                    SequenceFeature feature = features.get(featureId);
+                    Location location = locations.get(featureId);
+                    // get the sub-sequence for this feature
+                    ClobAccess featureSeq = getSubSequence(contigResidues, location);
+                    if (featureSeq == null) {
+                        // probably the location is out of range
+                        // LOG.info("Could not get feature sequence for location: " + location);
+                    } else {
+                        try {
+                            Sequence sequence = (Sequence) DynamicUtil.createObject(Collections.singleton(Sequence.class));
+                            SequenceFeature clone = PostProcessUtil.cloneInterMineObject(feature);
+                            sequence.setResidues(featureSeq);
+                            sequence.setLength(featureSeq.length());
+                            sequences.put(featureId, sequence);
+                            clone.setSequence(sequence);
+                            clone.setLength(new Integer(featureSeq.length()));
+                            clones.put(featureId, clone);
+                        } catch (IllegalAccessException ex) {
+                            LOG.error(ex);
+                        }
+                    }
+                });
+            //////////////////////////////////////////////////////////////////////////
+
+            // now store our sequences and feature clones
+            osw.beginTransaction();
+            for (Sequence sequence : sequences.values()) {
                 osw.store(sequence);
-                SequenceFeature clone = PostProcessUtil.cloneInterMineObject(feature);
-                clone.setSequence(sequence);
-                clone.setLength(new Integer(featureSeq.length()));
+            }
+            for (SequenceFeature clone : clones.values()) {
                 osw.store(clone);
-                count++;
             }
             osw.commitTransaction();
-            LOG.info("Finished setting " + count + " feature sequences for " + primaryIdentifier + ", took " + (System.currentTimeMillis() - startTime) + " ms.");
+            
+            LOG.info("Finished setting " + sequences.size() + " feature sequences for " + primaryIdentifier + ", took " + (System.currentTimeMillis() - startTime) + " ms.");
         }
 
         return numResults;
@@ -316,13 +319,12 @@ public class TransferSequencesProcess extends PostProcessor {
     /**
      * Get the subsequence for a Location on a given Sequence.
      */
-    private static ClobAccess getSubSequence(Sequence chromosomeSequence, Location location) {
+    private static ClobAccess getSubSequence(ClobAccess contigResidues, Location location) {
         int charsToCopy = location.getEnd().intValue() - location.getStart().intValue() + 1;
-        ClobAccess chromosomeSequenceString = chromosomeSequence.getResidues();
 
-        if (charsToCopy > chromosomeSequenceString.length()) {
-            LOG.warn("SequenceFeature too long, ignoring - Location: "
-                    + location.getId() + "  LSF id: " + location.getFeature());
+        if (charsToCopy > contigResidues.length()) {
+            LOG.warn("SequenceFeature too long, ignoring. Contig length=" + contigResidues.length() +
+                     " Location=" + location.getId() + " feature=" + location.getFeature());
             return null;
         }
 
@@ -335,7 +337,7 @@ public class TransferSequencesProcess extends PostProcessor {
             return null;
         }
 
-        if (endPos > chromosomeSequenceString.length()) {
+        if (endPos > contigResidues.length()) {
             LOG.warn(" has end coordinate greater than chromsome length."
                     + "ignoring Location: "
                     + location.getId() + "  LSF id: " + location.getFeature());
@@ -345,9 +347,9 @@ public class TransferSequencesProcess extends PostProcessor {
         ClobAccess subSeqString;
 
         if (startPos < endPos) {
-            subSeqString = chromosomeSequenceString.subSequence(startPos, endPos);
+            subSeqString = contigResidues.subSequence(startPos, endPos);
         } else {
-            subSeqString = chromosomeSequenceString.subSequence(endPos, startPos);
+            subSeqString = contigResidues.subSequence(endPos, startPos);
         }
 
         if ("-1".equals(location.getStrand())) {
@@ -524,7 +526,7 @@ public class TransferSequencesProcess extends PostProcessor {
                 Location  location = (Location) rr.get(1);
                 
                 // add CDS
-                ClobAccess clob = getSubSequence(sequence, location);
+                ClobAccess clob = getSubSequence(sequence.getResidues(), location);
                 if (location.getStrand() != null && "-1".equals(location.getStrand())) {
                     currentCDSBases.insert(0, clob.toString());
                 } else {
