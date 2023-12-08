@@ -109,7 +109,6 @@ public class TransferSequencesProcess extends PostProcessor {
         }
         LOG.info("Found " + chromosomes.size() + " chromosomes with sequence, took " + (System.currentTimeMillis() - startTime) + " ms.");
         // do the transfer work for Chromosomes
-        // CDS can be discontiguous, process them separately, and transcripts are separately as well
         for (Chromosome chromosome : chromosomes) {
             int numFeatures = transferForChromosome(chromosome);
         }
@@ -123,6 +122,7 @@ public class TransferSequencesProcess extends PostProcessor {
      */
     protected void transferToSupercontigFeatures() throws IllegalAccessException, ObjectStoreException {
         long startTime = System.currentTimeMillis();
+        LOG.info("Starting sequence transfer to features on supercontigs...");
         // query features on supercontigs
         Query q = new Query();
         ConstraintSet cs = new ConstraintSet(ConstraintOp.AND);
@@ -164,6 +164,7 @@ public class TransferSequencesProcess extends PostProcessor {
             clone.setLength(featureSeq.length());
             osw.store(clone);
             count++;
+            if (count % 10000 == 0) LOG.info(count + " sequences stored for supercontig features...");
         }
         osw.commitTransaction();
         LOG.info("Stored " + count + " sequences for features on supercontigs; took " + (System.currentTimeMillis() - startTime) + " ms.");
