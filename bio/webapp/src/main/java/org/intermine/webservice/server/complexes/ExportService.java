@@ -216,8 +216,8 @@ public class ExportService extends JSONService
                 Integer end = (Integer) row.get(12).getField();
 
                 // range
-                DefaultPosition startPosition = new DefaultPosition(new Long(start));
-                DefaultPosition endPosition = new DefaultPosition(new Long(end));
+                DefaultPosition startPosition = new DefaultPosition((long) start);
+                DefaultPosition endPosition = new DefaultPosition((long) end);
 
                 DefaultRange range = new DefaultRange(startPosition, endPosition);
 

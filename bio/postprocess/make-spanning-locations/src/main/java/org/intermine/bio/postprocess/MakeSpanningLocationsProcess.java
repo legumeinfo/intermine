@@ -43,8 +43,9 @@ import org.intermine.postprocess.PostProcessor;
 /**
  * Create a Location that spans the locations of some child objects.  eg. create a location for
  * Transcript that is as big as all the exons in it's exons collection.  One new location will
- * be created for each possible Location.object - Transcript->Chromosome, Transcript->Contig
+ * be created for each possible Location.object: Transcript to Chromosome, Transcript to Contig,
  * etc.
+ *
  * @author Richard Smith
  * @author Kim Rutherford
  */
@@ -79,7 +80,7 @@ public class MakeSpanningLocationsProcess extends PostProcessor
     /**
      * Create a Location that spans the locations of some child objects.  eg. create a location for
      * Transcript that is as big as all the exons in it's exons collection.  One new location will
-     * be created for each possible Location.object - Transcript->Chromosome, Transcript->Contig
+     * be created for each possible Location.object: Transcript to Chromosome, Transcript to Contig,
      * etc.
      * @param parentClsName the parent, eg. Transcript
      * @param childClsName the child, eg. Exon

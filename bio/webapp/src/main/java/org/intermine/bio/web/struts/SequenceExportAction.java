@@ -78,7 +78,7 @@ public class SequenceExportAction extends InterMineAction
 
         Properties webProps = (Properties) session.getServletContext().
                 getAttribute(Constants.WEB_PROPERTIES);
-        Integer objectId = new Integer(request.getParameter("object"));
+        Integer objectId = Integer.parseInt(request.getParameter("object"));
         InterMineObject obj = getObject(os, webProps, objectId);
 
         if (obj instanceof SequenceFeature || obj instanceof Protein) {

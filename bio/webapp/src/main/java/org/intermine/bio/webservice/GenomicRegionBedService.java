@@ -53,7 +53,7 @@ public class GenomicRegionBedService extends AbstractRegionExportService
 
         String organisms = StringUtils.join(
             SequenceFeatureExportUtil.getOrganisms(pq, im, getPermission().getProfile()), ",");
-        List<Integer> indexes = Arrays.asList(new Integer(0));
+        List<Integer> indexes = Arrays.asList(0);
 
         return new BEDExporter(getPrintWriter(), indexes, sourceName, organisms, isUcsc,
                 trackDescription);

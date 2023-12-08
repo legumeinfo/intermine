@@ -170,12 +170,9 @@ public class RegulatoryRegionsDisplayer extends ReportDisplayer
 
     private void incrementCount(Map<String, Integer> regionCounts, InterMineObject feature) {
         String type = DynamicUtil.getSimpleClass(feature).getSimpleName();
-        Integer count = regionCounts.get(type);
-        if (count == null) {
-            count = new Integer(0);
-            regionCounts.put(type, count);
-        }
-        regionCounts.put(type, new Integer(count.intValue() + 1));
+        int count = 0;
+        if (regionCounts.containsKey(type)) count = regionCounts.get(type);
+        regionCounts.put(type, count + 1);
     }
 
 }

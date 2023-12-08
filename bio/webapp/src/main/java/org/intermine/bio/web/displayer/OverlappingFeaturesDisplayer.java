@@ -169,12 +169,9 @@ public class OverlappingFeaturesDisplayer extends ReportDisplayer
 
     private void incrementCount(Map<String, Integer> featureCounts, InterMineObject feature) {
         String type = DynamicUtil.getSimpleClass(feature).getSimpleName();
-        Integer count = featureCounts.get(type);
-        if (count == null) {
-            count = new Integer(0);
-            featureCounts.put(type, count);
-        }
-        featureCounts.put(type, new Integer(count.intValue() + 1));
+        int count = 0;
+        if (featureCounts.containsKey(type)) count = featureCounts.get(type);
+        featureCounts.put(type, count + 1);
     }
 
 }

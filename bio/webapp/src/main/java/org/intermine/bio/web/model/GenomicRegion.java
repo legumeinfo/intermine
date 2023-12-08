@@ -22,7 +22,7 @@ public class GenomicRegion implements Comparable<GenomicRegion>
     private String chr;
     private Integer start;
     private Integer end;
-    private Integer extendedRegionSize = new Integer(0); // user add region flanking
+    private Integer extendedRegionSize = 0; // user add region flanking
     private Integer extendedStart;
     private Integer extendedEnd;
 

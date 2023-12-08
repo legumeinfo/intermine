@@ -108,7 +108,7 @@ public class GFF3Record
             score = null;
         } else {
             try {
-                score = new Double(scoreString);
+                score = Double.parseDouble(scoreString);
             } catch (NumberFormatException nfe) {
                 throw new IOException("can not parse score: " + scoreString + " from line: "
                         + line);

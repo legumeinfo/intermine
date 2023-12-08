@@ -469,14 +469,14 @@ public class GFF3Exporter implements Exporter
             }
             if (!seenAttributeValues.contains(el.getId())) {
                 seenAttributeValues.add(el.getId());
-                Integer version = attributeVersions.get(attributeName);
-                if (version == null) {
-                    version = new Integer(1);
-                    attributes.put(attributeName, formatElementValue(el));
-                } else {
+                if (attributeVersions.containsKey(attributeName)) {
+                    int version = attributeVersions.get(attributeName);
                     attributes.put(attributeName + version, formatElementValue(el));
+                } else {
+                    int version = 1;
+                    attributes.put(attributeName, formatElementValue(el));
+                    attributeVersions.put(attributeName, version + 1);
                 }
-                attributeVersions.put(attributeName, new Integer(version.intValue() + 1));
             }
         }
     }
