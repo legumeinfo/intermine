@@ -88,6 +88,7 @@ public class PopulateChildFeaturesProcess extends PostProcessor
 
         // save our objects to store using a parallel stream, then do the transaction in one swoop
         Map<Integer,InterMineObject> objectsToStore = new ConcurrentHashMap<>();
+        LOG.info("Building storage map of objects to store...");
         //////////////////////////////////////////////////////////////////////////////////////////
         res.asList().parallelStream().forEach(obj -> {
                 ResultsRow rr = (ResultsRow) obj;
@@ -107,6 +108,7 @@ public class PopulateChildFeaturesProcess extends PostProcessor
                 }
             });
         //////////////////////////////////////////////////////////////////////////////////////////
+        LOG.info("...done building storage map of objects to store.");
 
         // now store our cloned objects
         LOG.info("Starting to store child features on " + objectsToStore.size() + " parent objects...");
@@ -115,7 +117,7 @@ public class PopulateChildFeaturesProcess extends PostProcessor
             osw.store(o);
         }
         osw.commitTransaction();
-        LOG.info("Done storing child features on " + objectsToStore.size() + " parent objects.");
+        LOG.info("...done storing child features on " + objectsToStore.size() + " parent objects.");
     }
 
     /**
@@ -211,9 +213,6 @@ public class PopulateChildFeaturesProcess extends PostProcessor
             }
         }
         if (children.size() > 0) {
-            LOG.info("Adding " + children.size() + " children to parent class "
-                    + parentSOTermName);
-            // don't do it if parent exon or transposon fragment, see Engine.java
             parentToChildren.put(parentSOTermName, children);
         }
     }
