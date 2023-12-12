@@ -10,8 +10,10 @@
     <attribute name="description" type="java.lang.String"/>
   </class>
 
-  <!-- required by create-gene-flanking-features post-process -->
+  <!-- required by create-intergenic-region-features and create-gene-flanking-features post-processes -->
   <class name="Gene" is-interface="true">
+    <reference name="upstreamIntergenicRegion" referenced-type="IntergenicRegion" term="http://purl.obolibrary.org/obo/SO_0000605"/>
+    <reference name="downstreamIntergenicRegion" referenced-type="IntergenicRegion" term="http://purl.obolibrary.org/obo/SO_0000605"/>
     <collection name="flankingRegions" referenced-type="GeneFlankingRegion" reverse-reference="gene" term="http://purl.obolibrary.org/obo/SO_0000239"/>
   </class>
 
@@ -47,5 +49,5 @@
   <class name="ProteinDomain" extends="Annotatable" is-interface="true" term="http://purl.obolibrary.org/obo/SO:0000417">
     <attribute name="description" type="java.lang.String"/>
   </class>
-  
+
 </classes>
