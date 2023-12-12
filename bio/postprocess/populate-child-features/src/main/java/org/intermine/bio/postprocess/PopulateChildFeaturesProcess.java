@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 import org.intermine.metadata.ClassDescriptor;
@@ -23,6 +24,7 @@ import org.intermine.metadata.Model;
 import org.intermine.metadata.TypeUtil;
 import org.intermine.model.InterMineObject;
 import org.intermine.model.bio.OntologyTerm;
+import org.intermine.model.bio.SequenceFeature;
 import org.intermine.model.bio.SOTerm;
 import org.intermine.bio.util.PostProcessUtil;
 import org.intermine.objectstore.ObjectStore;
@@ -40,10 +42,11 @@ import org.intermine.objectstore.ObjectStoreWriter;
 
 
 /**
- * Populate the SequenceFeature.childFeatures() collection for: Gene, Transcript, Exon
- * Only used for JBrowse
+ * Populate the SequenceFeature.childFeatures() collection for: Gene, Transcript, Exon.
+ * Only used for JBrowse.
  *
  * @author Julie Sullivan
+ * @author Sam Hokin
  */
 public class PopulateChildFeaturesProcess extends PostProcessor
 {
@@ -53,7 +56,6 @@ public class PopulateChildFeaturesProcess extends PostProcessor
     private static final String TARGET_COLLECTION = "childFeatures";
     private Map<String, Set<CollectionHolder>> parentToChildren
             = new HashMap<String, Set<CollectionHolder>>();
-
 
     /**
      * Create a new instance
@@ -69,72 +71,89 @@ public class PopulateChildFeaturesProcess extends PostProcessor
      * <br/>
      * Main post-processing routine. Fill in the Gene.introns collection
      * from Gene.introns
-     * @throws ObjectStoreException if the objectstore throws an exception
+     *
+     * @throws ObjectStoreException
      */
-    public void postProcess()
-            throws ObjectStoreException {
+    public void postProcess() throws ObjectStoreException {
 
         model = Model.getInstanceByName("genomic");
 
         Map<String, SOTerm> soTerms = populateSOTermMap(osw.getObjectStore());
+
         Query q = getAllParents();
         Results res = osw.getObjectStore().execute(q);
         int parentCount = 0;
         int childCount = 0;
-        osw.beginTransaction();
-        for (Object obj : res.asList()) {
-            ResultsRow rr = (ResultsRow) obj;
-            InterMineObject parent = (InterMineObject) rr.get(0);
-            SOTerm soTerm = (SOTerm) rr.get(1);
-            try {
-                InterMineObject o = PostProcessUtil.cloneInterMineObject(parent);
-                Set<InterMineObject> newCollection = getChildFeatures(soTerms, soTerm, o);
-                if (newCollection != null && !newCollection.isEmpty()) {
-                    o.setFieldValue(TARGET_COLLECTION, newCollection);
-                    osw.store(o);
-                    parentCount++;
-                    childCount += newCollection.size();
+        
+
+        // save our objects to store using a parallel stream, then do the transaction in one swoop
+        Map<Integer,InterMineObject> objectsToStore = new ConcurrentHashMap<>();
+        //////////////////////////////////////////////////////////////////////////////////////////
+        res.asList().parallelStream().forEach(obj -> {
+                ResultsRow rr = (ResultsRow) obj;
+                InterMineObject parent = (InterMineObject) rr.get(0);
+                SOTerm soTerm = (SOTerm) rr.get(1);
+                try {
+                    InterMineObject clone = PostProcessUtil.cloneInterMineObject(parent);
+                    Set<InterMineObject> newCollection = getChildFeatures(soTerms, soTerm, clone);
+                    if (newCollection != null && !newCollection.isEmpty()) {
+                        clone.setFieldValue(TARGET_COLLECTION, newCollection);
+                        objectsToStore.put(clone.getId(), clone);
+                        // parentCount++;
+                        // childCount += newCollection.size();
+                    }
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException(e);
                 }
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException("Failed to clone object:" + e);
-            }
+            });
+        //////////////////////////////////////////////////////////////////////////////////////////
+
+        // now store our cloned objects
+        LOG.info("Starting to store child features on " + objectsToStore.size() + " parent objects...");
+        osw.beginTransaction();
+        for (InterMineObject o : objectsToStore.values()) {
+            osw.store(o);
         }
         osw.commitTransaction();
-        LOG.info("Stored " + childCount + " child features for " + parentCount
-                + " parent features. ");
+        LOG.info("Done storing child features on " + objectsToStore.size() + " parent objects.");
     }
 
-    // for each collection in this class (e.g. Gene), test if it's a child feature
+    /**
+     * The main routine which populates child features of an InterMineObject.
+     *
+     * @param soTerms map of SO names to SOTerm objects
+     * @param soTerm an SOTerm object
+     * @param o the InterMineObject of interest
+     * @return a set of child feature InterMineObjects
+     */
     @SuppressWarnings("unchecked")
-    private Set<InterMineObject> getChildFeatures(Map<String, SOTerm> soTerms, SOTerm soTerm,
-                                                  InterMineObject o) {
-        // e.g. gene
-        String parentSOTerm = soTerm.getName();
+    private Set<InterMineObject> getChildFeatures(Map<String, SOTerm> soTerms, SOTerm soTerm, InterMineObject o) {
+
+        String parentSOTerm = soTerm.getName(); // e.g. gene
 
         // if we have not seen this class before, set relationships
         if (parentToChildren.get(parentSOTerm) == null) {
             populateParentChildMap(soTerms, parentSOTerm);
         }
 
-        Set<InterMineObject> newCollection = new HashSet<InterMineObject>();
-
         Set<CollectionHolder> childHolders = parentToChildren.get(parentSOTerm);
         if (childHolders == null) {
             return null;
         }
+        
+        Set<InterMineObject> newCollection = new HashSet<InterMineObject>();
         for (CollectionHolder h : childHolders) {
             String childCollectionName = h.getCollectionName();
             String childClassName = h.getClassName();
             try {
-                Set<InterMineObject> childObjects
-                        = (Set<InterMineObject>) o.getFieldValue(childCollectionName);
+                Set<InterMineObject> childObjects = (Set<InterMineObject>) o.getFieldValue(childCollectionName);
                 newCollection.addAll(childObjects);
             } catch (IllegalAccessException e) {
-                LOG.error("couldn't set relationship between " + parentSOTerm + " and "
-                        + childClassName);
+                LOG.error("Couldn't set relationship between " + parentSOTerm + " and " + childClassName);
                 return null;
             }
         }
+
         return newCollection;
     }
 
@@ -206,15 +225,14 @@ public class PopulateChildFeaturesProcess extends PostProcessor
      *
      * TODO: add utility for the translation className -> so_term
      */
-    private SOTerm lookUpChild(Map<String, SOTerm> soTerms,
-                               String childClassName) {
+    private SOTerm lookUpChild(Map<String, SOTerm> soTerms, String childClassName) {
         // some specific translations
         if (childClassName.contentEquals("CDS")) {
             return soTerms.get(childClassName);
         }
-//        if (childClassName.contentEquals("MiRNA")) {
-//            return soTerms.get("miRNA");
-//        }
+        // if (childClassName.contentEquals("MiRNA")) {
+        //     return soTerms.get("miRNA");
+        // }
         if (childClassName.contentEquals("PseudogenicTranscript")) {
             return soTerms.get("pseudogenic_transcript");
         }
@@ -251,9 +269,11 @@ public class PopulateChildFeaturesProcess extends PostProcessor
     }
 
     /**
+     * Populate the soTerms map.
+     *
      * @param os object store
      * @return map of name to so term
-     * @throws ObjectStoreException if something goes wrong
+     * @throws ObjectStoreException
      */
     protected Map<String, SOTerm> populateSOTermMap(ObjectStore os) throws ObjectStoreException {
         Map<String, SOTerm> soTerms = new HashMap<String, SOTerm>();
@@ -270,8 +290,8 @@ public class PopulateChildFeaturesProcess extends PostProcessor
             ResultsRow rr = (ResultsRow) obj;
             SOTerm soTerm = (SOTerm) rr.get(0);
             soTerms.put(soTerm.getName(), soTerm);
-            LOG.debug("Added SO term: " + soTerm.getName());
         }
+        LOG.info("Populated SO Term map.");
         return soTerms;
     }
 
@@ -282,9 +302,7 @@ public class PopulateChildFeaturesProcess extends PostProcessor
         Query q = new Query();
         q.setDistinct(false);
 
-        QueryClass qcFeature =
-                new QueryClass(model.getClassDescriptorByName("SequenceFeature").getType());
-
+        QueryClass qcFeature = new QueryClass(SequenceFeature.class);
         q.addToSelect(qcFeature);
         q.addFrom(qcFeature);
 
@@ -293,13 +311,8 @@ public class PopulateChildFeaturesProcess extends PostProcessor
         q.addFrom(qcSOTerm);
         q.addToOrderBy(qcSOTerm);
 
-        ConstraintSet cs = new ConstraintSet(ConstraintOp.AND);
-
-        QueryObjectReference ref1 = new QueryObjectReference(qcFeature, "sequenceOntologyTerm");
-        cs.addConstraint(new ContainsConstraint(ref1, ConstraintOp.CONTAINS, qcSOTerm));
-
-        // Set the constraint of the query
-        q.setConstraint(cs);
+        QueryObjectReference ref = new QueryObjectReference(qcFeature, "sequenceOntologyTerm");
+        q.setConstraint(new ContainsConstraint(ref, ConstraintOp.CONTAINS, qcSOTerm));
 
         return q;
     }
