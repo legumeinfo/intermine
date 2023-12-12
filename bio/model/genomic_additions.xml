@@ -79,7 +79,6 @@
   </class>
 
   <class name="Gene" extends="SequenceFeature" is-interface="true" term="http://purl.obolibrary.org/obo/SO_0000704">
-    <attribute name="ensemblName" type="java.lang.String"/>
     <reference name="upstreamIntergenicRegion" referenced-type="IntergenicRegion"/>
     <reference name="downstreamIntergenicRegion" referenced-type="IntergenicRegion"/>  
     <collection name="geneFamilyAssignments" referenced-type="GeneFamilyAssignment"/>
