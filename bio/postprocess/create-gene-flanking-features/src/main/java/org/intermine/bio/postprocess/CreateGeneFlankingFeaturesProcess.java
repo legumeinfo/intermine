@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 
@@ -72,86 +73,98 @@ public class CreateGeneFlankingFeaturesProcess extends PostProcessor {
     // The values strings for up/down stream from a gene.
     private static String[] directions = new String[] {"upstream", "downstream"};
 
-    // SH: don't include genes at all
-    private static boolean[] includeGenes = new boolean[] {false};
+    Map<String,GeneFlankingRegion> flankingRegions = new ConcurrentHashMap<>(); // keyed by primaryIdentifier
 
     /**
      * Create a new instance
      *
      * @param osw object store writer
      */
-    public CreateGeneFlankingFeaturesProcess(ObjectStoreWriter osw) {
+    public CreateGeneFlankingFeaturesProcess(ObjectStoreWriter osw) throws ObjectStoreException {
         super(osw);
         this.os = osw.getObjectStore();
         dataSource = (DataSource) DynamicUtil.createObject(Collections.singleton(DataSource.class));
         dataSource.setName("InterMine post-processor");
-        try {
-            DataSource existingDataSource = os.getObjectByExample(dataSource, Collections.singleton("name"));
-	    if (existingDataSource==null) {
-		// store new DataSource
-		osw.store(dataSource);
-	    } else {
-		// use existing DataSource
-		dataSource = existingDataSource;
-	    }
-        } catch (ObjectStoreException e) {
-	    System.err.println(e);
-	    System.exit(1);
+        DataSource existingDataSource = os.getObjectByExample(dataSource, Collections.singleton("name"));
+        if (existingDataSource==null) {
+            // store new DataSource
+            osw.beginTransaction();
+            osw.store(dataSource);
+            osw.commitTransaction();
+        } else {
+            // use existing DataSource
+            dataSource = existingDataSource;
         }
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public void postProcess() throws ObjectStoreException {
-        // DataSet - store later
+        // DataSet - store later if we store any features
         dataSet = (DataSet) DynamicUtil.createObject(Collections.singleton(DataSet.class));
         dataSet.setName("InterMine gene-flanking regions");
         dataSet.setDescription("Gene-flanking regions created by the core InterMine post-processor");
         dataSet.setVersion("" + new Date()); // current time and date
         dataSet.setUrl("http://www.intermine.org");
         dataSet.setDataSource(dataSource);
+    }
 
+    /**
+     * {@inheritDoc}
+     */
+    public void postProcess() throws ObjectStoreException {
         // query Genes that lack flanking regions
         Query q = new Query();
         QueryClass qcGene = new QueryClass(Gene.class);
         q.addFrom(qcGene);
         q.addToSelect(qcGene);
-        QueryClass qcGeneFlankingRegion = new QueryClass(GeneFlankingRegion.class);
-        q.addFrom(qcGeneFlankingRegion);
         QueryCollectionReference flankingRegionsRef = new QueryCollectionReference(qcGene, "flankingRegions");
         q.setConstraint(new ContainsConstraint(flankingRegionsRef, ConstraintOp.IS_NULL));
-
-        int count = 0;
+        Set<Gene> genes = new HashSet<>();
         Results results = os.execute(q, 1000, true, true, true);
         if (results.asList().size() > 0) {
-            osw.beginTransaction();
             for (Object obj : results.asList()) {
                 ResultsRow rr = (ResultsRow) obj;
                 Gene gene = (Gene) rr.get(0);
-                createAndStoreFlankingRegions(gene);
-                count++;
+                genes.add(gene);
             }
+            LOG.info("Found " + genes.size() + " genes that need flanking regions.");
+            /////////////////////////////////////////////
+            // get flanking regions in a parallel stream
+            genes.parallelStream().forEach(gene -> {
+                    try {
+                        createFlankingRegions(gene);
+                    } catch (ObjectStoreException ex) {
+                        System.err.println(ex);
+                        System.exit(1);
+                    }
+                });
+            /////////////////////////////////////////////
+            LOG.info("Created " + flankingRegions.size() + " gene flanking regions.");
+            LOG.info("Now storing...");
+            // store
+            osw.beginTransaction();
             osw.store(dataSet);
+            for (GeneFlankingRegion flankingRegion : flankingRegions.values()) {
+                Location location = null;
+                if (flankingRegion.getChromosome() != null) {
+                    location = flankingRegion.getChromosomeLocation();
+                } else {
+                    location = flankingRegion.getSupercontigLocation();
+                }
+                osw.store(flankingRegion);
+                osw.store(location);
+            }
             osw.commitTransaction();
-            LOG.info("Stored flanking regions for " + count + " genes.");
+            LOG.info("...done.");
         } else {
-            LOG.info("All genes have flanking regions.");
+            LOG.info("All genes have flanking regions, none created.");
         }
     }
 
     /**
-     * Create and store the various flanking regions for a given Gene.
+     * Create flanking regions for a gene, which are stored in the instance map.
      *
      * @param gene the Gene
      */
-    private void createAndStoreFlankingRegions(Gene gene) throws ObjectStoreException {
+    void createFlankingRegions(Gene gene) throws ObjectStoreException {
+        // get the location of the gene
         boolean onChromosome = (gene.getChromosome() != null);
-        boolean onSupercontig = (gene.getSupercontig() != null);
-        if (!onChromosome && !onSupercontig) {
-            throw new RuntimeException("Gene " + gene.getId() + " is not on a chromosome or a supercontig.");
-        }
-
         Chromosome chromosome = null;
         Supercontig supercontig = null;
         Location geneLoc = null;
@@ -162,81 +175,76 @@ public class CreateGeneFlankingFeaturesProcess extends PostProcessor {
             supercontig = gene.getSupercontig();
             geneLoc = gene.getSupercontigLocation();
         }
-
-        // run through the various flanking region distances and both directions
+        // run through the various flanking region distances
         for (double distance : distances) {
+            // run through upstream and downstream
             for (String direction : directions) {
-                for (boolean includeGene : includeGenes) {
-                    String strand = geneLoc.getStrand();
-                    int geneStart = geneLoc.getStart().intValue();
-                    int geneEnd = geneLoc.getEnd().intValue();
-                    int contigLength = 0;
-                    if (onChromosome) {
-                        contigLength = chromosome.getLength().intValue();
-                    } else {
-                        contigLength = supercontig.getLength().intValue();
-                    }
-                    // gene touches a contig end so there isn't a flanking region
-                    if ((geneStart <= 1) || (geneEnd >= contigLength)) {
-                        continue;
-                    }
-                    // create this GeneFlankingRegion
-                    GeneFlankingRegion region = (GeneFlankingRegion) DynamicUtil.createObject(Collections.singleton(GeneFlankingRegion.class));
-                    Location location = (Location) DynamicUtil.createObject(Collections.singleton(Location.class));
-                    region.setDistance(distance + "kb");
-                    region.setDirection(direction);
-                    try {
-                        PostProcessUtil.checkFieldExists(os.getModel(), "GeneFlankingRegion", "includeGene", "Not setting");
-                        region.setFieldValue("includeGene", Boolean.valueOf(includeGene));
-                    } catch (MetaDataException e) {
-                        // GeneFlankingRegion.includeGene not in model so do nothing
-                    }
-                    region.setGene(gene);
-                    if (onChromosome) {
-                        region.setChromosome(chromosome);
-                        region.setChromosomeLocation(location);
-                    } else {
-                        region.setSupercontig(supercontig);
-                        region.setSupercontigLocation(location);
-                    }
-                    region.setOrganism(gene.getOrganism());
-		    region.setStrain(gene.getStrain());
-                    region.setPrimaryIdentifier(gene.getPrimaryIdentifier() + "_" + distance + "_kb_" + direction);
-
-                    // this should be some clever algorithm
-                    int start, end;
-                    if ("upstream".equals(direction) && "1".equals(strand)) {
-                        start = geneStart - (int) Math.round(distance * 1000);
-                        end = includeGene ? geneEnd : geneStart - 1;
-                    } else if ("upstream".equals(direction) && "-1".equals(strand)) {
-                        start = includeGene ? geneStart : geneEnd + 1;
-                        end = geneEnd + (int) Math.round(distance * 1000);
-                    } else if ("downstream".equals(direction) && "1".equals(strand)) {
-                        start = includeGene ? geneStart : geneEnd + 1;
-                        end = geneEnd + (int) Math.round(distance * 1000);
-                    } else {  // "downstream".equals(direction) && strand.equals("-1")
-                        start = geneStart - (int) Math.round(distance * 1000);
-                        end = includeGene ? geneEnd : geneStart - 1;
-                    }
-
-                    // if the region hangs off the start or end of a chromosome set it to finish
-                    // at the end of the chromosome
-                    location.setStart(Math.max(start, 1));
-                    int e = Math.min(end, contigLength);
-                    location.setEnd(e);
-                    location.setStrand(strand);
-                    if (onChromosome) {
-                        location.setLocatedOn(chromosome);
-                    } else {
-                        location.setLocatedOn(supercontig);
-                    }
-                    location.setFeature(region);
-                    region.setLength((location.getEnd().intValue() - location.getStart().intValue()) + 1);
-
-                    // store
-                    osw.store(location);
-                    osw.store(region);
+                String strand = geneLoc.getStrand();
+                int geneStart = geneLoc.getStart().intValue();
+                int geneEnd = geneLoc.getEnd().intValue();
+                int contigLength = 0;
+                if (onChromosome) {
+                    contigLength = chromosome.getLength().intValue();
+                } else {
+                    contigLength = supercontig.getLength().intValue();
                 }
+                // gene touches a contig end so there isn't a flanking region
+                if ((geneStart <= 1) || (geneEnd >= contigLength)) {
+                    continue;
+                }
+                // create this GeneFlankingRegion
+                GeneFlankingRegion region = (GeneFlankingRegion) DynamicUtil.createObject(Collections.singleton(GeneFlankingRegion.class));
+                Location location = (Location) DynamicUtil.createObject(Collections.singleton(Location.class));
+                region.setDistance(distance + "kb");
+                region.setDirection(direction);
+                try {
+                    PostProcessUtil.checkFieldExists(os.getModel(), "GeneFlankingRegion", "includeGene", "Not setting");
+                    region.setFieldValue("includeGene", false);
+                } catch (MetaDataException e) {
+                    // GeneFlankingRegion.includeGene not in model so do nothing
+                }
+                region.setGene(gene);
+                if (onChromosome) {
+                    region.setChromosome(chromosome);
+                    region.setChromosomeLocation(location);
+                } else {
+                    region.setSupercontig(supercontig);
+                    region.setSupercontigLocation(location);
+                }
+                region.setOrganism(gene.getOrganism());
+                region.setStrain(gene.getStrain());
+                String primaryIdentifier = gene.getPrimaryIdentifier() + "_" + distance + "_kb_" + direction;
+                region.setPrimaryIdentifier(primaryIdentifier);
+                // this should be some clever algorithm
+                int start, end;
+                if ("upstream".equals(direction) && "1".equals(strand)) {
+                    start = geneStart - (int) Math.round(distance * 1000);
+                    end = geneStart - 1;
+                } else if ("upstream".equals(direction) && "-1".equals(strand)) {
+                    start = geneEnd + 1;
+                    end = geneEnd + (int) Math.round(distance * 1000);
+                } else if ("downstream".equals(direction) && "1".equals(strand)) {
+                    start = geneEnd + 1;
+                    end = geneEnd + (int) Math.round(distance * 1000);
+                } else {  // "downstream".equals(direction) && strand.equals("-1")
+                    start = geneStart - (int) Math.round(distance * 1000);
+                    end = geneStart - 1;
+                }
+                // if the region hangs off the start or end of a chromosome set it to finish
+                // at the end of the chromosome
+                location.setStart(Math.max(start, 1));
+                int e = Math.min(end, contigLength);
+                location.setEnd(e);
+                location.setStrand(strand);
+                if (onChromosome) {
+                    location.setLocatedOn(chromosome);
+                } else {
+                    location.setLocatedOn(supercontig);
+                }
+                location.setFeature(region);
+                region.setLength((location.getEnd().intValue() - location.getStart().intValue()) + 1);
+                // store in our map
+                flankingRegions.put(primaryIdentifier, region);
             }
         }
     }
