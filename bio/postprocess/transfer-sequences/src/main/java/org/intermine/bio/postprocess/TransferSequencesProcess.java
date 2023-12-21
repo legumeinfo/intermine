@@ -269,7 +269,6 @@ public class TransferSequencesProcess extends PostProcessor {
                 count++;
             }
             osw.commitTransaction();
-            LOG.info("Stored " + count + " feature sequences for " + chromosomeIdentifier + "; took " + (System.currentTimeMillis() - startTime) + " ms.");
         }
         // return full numResults since we skipped CDSes and transcripts
         return numResults;
