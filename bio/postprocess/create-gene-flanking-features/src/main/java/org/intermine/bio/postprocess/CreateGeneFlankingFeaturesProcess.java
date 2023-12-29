@@ -195,7 +195,12 @@ public class CreateGeneFlankingFeaturesProcess extends PostProcessor {
                 // create this GeneFlankingRegion
                 GeneFlankingRegion region = (GeneFlankingRegion) DynamicUtil.createObject(Collections.singleton(GeneFlankingRegion.class));
                 Location location = (Location) DynamicUtil.createObject(Collections.singleton(Location.class));
-                region.setDistance(distance + "kb");
+                String distanceString = distance + "kb";
+                if (distance > 0.999) distanceString = Math.round(distance) + "kb";
+                String primaryIdentifier = gene.getPrimaryIdentifier() + "_" + distanceString + "_" + direction;
+                region.setPrimaryIdentifier(primaryIdentifier);
+                flankingRegions.put(primaryIdentifier, region); // store in our map
+                region.setDistance(distanceString);
                 region.setDirection(direction);
                 try {
                     PostProcessUtil.checkFieldExists(os.getModel(), "GeneFlankingRegion", "includeGene", "Not setting");
@@ -213,8 +218,9 @@ public class CreateGeneFlankingFeaturesProcess extends PostProcessor {
                 }
                 region.setOrganism(gene.getOrganism());
                 region.setStrain(gene.getStrain());
-                String primaryIdentifier = gene.getPrimaryIdentifier() + "_" + distance + "_kb_" + direction;
-                region.setPrimaryIdentifier(primaryIdentifier);
+                if (gene.getName() != null) {
+                    region.setName(gene.getName() + "_" + distanceString + "_" + direction);
+                }
                 // this should be some clever algorithm
                 int start, end;
                 if ("upstream".equals(direction) && "1".equals(strand)) {
@@ -243,8 +249,6 @@ public class CreateGeneFlankingFeaturesProcess extends PostProcessor {
                 }
                 location.setFeature(region);
                 region.setLength((location.getEnd().intValue() - location.getStart().intValue()) + 1);
-                // store in our map
-                flankingRegions.put(primaryIdentifier, region);
             }
         }
     }
