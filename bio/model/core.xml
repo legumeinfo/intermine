@@ -4,6 +4,7 @@
     <attribute name="primaryIdentifier" type="java.lang.String" term="http://semanticscience.org/resource/SIO_000673"/>
     <collection name="ontologyAnnotations" referenced-type="OntologyAnnotation" reverse-reference="subject" term="http://semanticscience.org/resource/SIO_000255"/>
     <collection name="publications" referenced-type="Publication" reverse-reference="entities" term="http://purl.org/dc/terms/bibliographicCitation"/>
+    <collection name="dataSets" referenced-type="DataSet" reverse-reference="entities" term="http://semanticscience.org/resource/SIO_001278"/>
   </class>
   <class name="Author" is-interface="true" term="http://purl.obolibrary.org/obo/NCIT_C42781">
     <attribute name="firstName" type="java.lang.String" term="http://xmlns.com/foaf/0.1/givenname"/>
@@ -22,7 +23,6 @@
     <collection name="locatedFeatures" referenced-type="Location" reverse-reference="locatedOn"/>
     <collection name="locations" referenced-type="Location" reverse-reference="feature" />
     <collection name="synonyms" referenced-type="Synonym" reverse-reference="subject" term="http://purl.obolibrary.org/obo/synonym"/>
-    <collection name="dataSets" referenced-type="DataSet" reverse-reference="bioEntities" term="http://semanticscience.org/resource/SIO_001278"/>
     <collection name="crossReferences" referenced-type="CrossReference" reverse-reference="subject" term="http://www.geneontology.org/formats/oboInOwl#hasDbXref"/>
   </class>
 
@@ -57,7 +57,7 @@
     <attribute name="licence" type="java.lang.String" term="http://purl.org/dc/terms/license"/>
     <reference name="dataSource" referenced-type="DataSource" reverse-reference="dataSets" term="http://purl.org/dc/terms/source"/>
     <reference name="publication" referenced-type="Publication" term="http://purl.org/dc/terms/bibliographicCitation"/>
-    <collection name="bioEntities" referenced-type="BioEntity" reverse-reference="dataSets" term="http://semanticscience.org/resource/SIO_001277"/>
+    <collection name="entities" referenced-type="Annotatable" reverse-reference="dataSets" term="http://semanticscience.org/resource/SIO_001277"/>
   </class>
 
   <class name="Exon" extends="SequenceFeature" is-interface="true" term="http://purl.obolibrary.org/obo/SO_0000147"/>
