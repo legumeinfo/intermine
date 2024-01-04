@@ -103,7 +103,7 @@ public class PfamTermConverter extends BioFileConverter {
             ontologyTerm.setAttribute("identifier", identifier);
             ontologyTerm.setAttribute("name", name);
             ontologyTerm.setAttribute("namespace", namespace);
-            ontologyTerm.setAttribute("description", description);
+            if (!description.equals("NULL")) ontologyTerm.setAttribute("description", description);
             ontologyTerms.put(identifier, ontologyTerm);
         }
     }
