@@ -79,13 +79,13 @@ public class CreateOverlapViewProcess extends PostProcessor
 
         String viewSql =
                 "CREATE VIEW overlappingfeaturessequencefeature "
-                        + " AS SELECT l1.featureid AS overlappingfeatures, "
-                        + "           l2.featureid AS sequencefeature "
-                        + "      FROM location l1, location l2 "
-                        + "     WHERE l1.locatedonid = l2.locatedonid "
-                        + "       AND l1.featureid != l2.featureid"
-                        + "       AND int4range(l1.intermine_start, l1.intermine_end + 1) "
-                        + "           && int4range(l2.intermine_start, l2.intermine_end + 1)";
+                        + " AS SELECT DISTINCT l1.featureid AS overlappingfeatures, "
+                        + "                    l2.featureid AS sequencefeature "
+                        + "    FROM location l1, location l2 "
+                        + "    WHERE l1.locatedonid = l2.locatedonid "
+                        + "    AND   l1.featureid != l2.featureid"
+                        + "    AND   int4range(l1.intermine_start, l1.intermine_end + 1) "
+                        + "          && int4range(l2.intermine_start, l2.intermine_end + 1)";
 
         LOG.info("Creating overlap view with SQL: " + viewSql);
 
