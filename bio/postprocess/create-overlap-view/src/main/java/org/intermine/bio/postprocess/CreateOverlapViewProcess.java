@@ -79,9 +79,9 @@ public class CreateOverlapViewProcess extends PostProcessor
 
         String viewSql =
                 "CREATE VIEW overlappingfeaturessequencefeature "
-                        + " AS SELECT DISTINCT l1.featureid AS overlappingfeatures, "
-                        + "                    l2.featureid AS sequencefeature "
-                        + "    FROM location l1, location l2 "
+                        + " AS SELECT l1.featureid AS overlappingfeatures, "
+                        + "           l2.featureid AS sequencefeature "
+                        + "    FROM  location l1, location l2 "
                         + "    WHERE l1.locatedonid = l2.locatedonid "
                         + "    AND   l1.featureid != l2.featureid"
                         + "    AND   int4range(l1.intermine_start, l1.intermine_end + 1) "
