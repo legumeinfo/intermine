@@ -2,6 +2,11 @@
 <classes>
 
   <!-- EXTENSIONS OF CORE CLASSES -->
+
+  <!-- LIS READMEs have a synopsis entry -->
+  <class name="DataSet" is-interface="true">
+    <attribute name="synopsis" type="java.lang.String"/>
+  </class>
   
   <!-- sources/fasta source has been updated to set these attributes -->
   <class name="BioEntity" is-interface="true">
