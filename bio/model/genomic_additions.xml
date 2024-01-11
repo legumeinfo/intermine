@@ -3,9 +3,16 @@
 
   <!-- EXTENSIONS OF CORE CLASSES -->
 
-  <!-- LIS READMEs have a synopsis entry -->
+  <!-- all LIS READMEs have a synopsis entry -->
   <class name="DataSet" is-interface="true">
     <attribute name="synopsis" type="java.lang.String"/>
+  </class>
+
+  <!-- all LIS organism descriptions include these things -->
+  <class name="Organism" is-interface="true">
+    <attribute name="abbreviation" type="java.lang.String"/>
+    <attribute name="description" type="java.lang.String"/>
+    <collection name="dataSets" referenced-type="DataSet"/>
   </class>
   
   <!-- sources/fasta source has been updated to set these attributes -->
