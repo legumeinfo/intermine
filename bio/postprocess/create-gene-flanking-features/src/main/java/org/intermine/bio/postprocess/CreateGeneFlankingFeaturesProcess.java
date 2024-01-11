@@ -36,6 +36,7 @@ import org.intermine.model.bio.DataSource;
 import org.intermine.model.bio.Gene;
 import org.intermine.model.bio.GeneFlankingRegion;
 import org.intermine.model.bio.Location;
+import org.intermine.model.bio.SOTerm;
 import org.intermine.model.bio.Supercontig;
 
 import org.intermine.objectstore.ObjectStore;
@@ -66,6 +67,7 @@ public class CreateGeneFlankingFeaturesProcess extends PostProcessor {
     private ObjectStore os;
     private DataSet dataSet;
     private DataSource dataSource;
+    private SOTerm soTerm;
 
     // The sizes in kb of flanking regions to create.
     private static double[] distances = new double[] {0.5, 1, 2, 5, 10};
@@ -102,6 +104,10 @@ public class CreateGeneFlankingFeaturesProcess extends PostProcessor {
         dataSet.setVersion("" + new Date()); // current time and date
         dataSet.setUrl("http://www.intermine.org");
         dataSet.setDataSource(dataSource);
+        // SOTerm should already exist
+        SOTerm tempSOTerm = (SOTerm) DynamicUtil.createObject(Collections.singleton(SOTerm.class));
+        tempSOTerm.setName("flanking_region");
+        soTerm = os.getObjectByExample(tempSOTerm, Collections.singleton("name"));
     }
 
     /**
@@ -220,7 +226,13 @@ public class CreateGeneFlankingFeaturesProcess extends PostProcessor {
                 region.setStrain(gene.getStrain());
                 if (gene.getName() != null) {
                     region.setName(gene.getName() + "_" + distanceString + "_" + direction);
+                    region.setSecondaryIdentifier(gene.getName() + "_" + distanceString + "_" + direction);
                 }
+                region.setAssemblyVersion(gene.getAssemblyVersion());
+                region.setAnnotationVersion(gene.getAnnotationVersion());
+                region.setDescription(distanceString + " " + direction + " " + "gene flanking region for " + gene.getName());
+                region.addDataSets(dataSet);
+                region.setSequenceOntologyTerm(soTerm);
                 // this should be some clever algorithm
                 int start, end;
                 if ("upstream".equals(direction) && "1".equals(strand)) {
