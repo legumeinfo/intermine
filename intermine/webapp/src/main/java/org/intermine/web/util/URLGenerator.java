@@ -39,11 +39,11 @@ public class URLGenerator
      * Generates base url. If default context path is defined in web.properties, then this
      * path is used, else request context path is used. This enables generation of links to
      * the application and not to the particular version of application.
-     * @return base url. For example: http://localhost:8080/query
+     *
+     * @return base url
      */
     public String getPermanentBaseURL() {
-        String contextPath = request.getContextPath();
-        return generateURL(request, contextPath);
+        return generateURL(request, request.getContextPath());
     }
 
     /**
@@ -57,12 +57,10 @@ public class URLGenerator
     private String generateURL(HttpServletRequest request, String contextPath) {
         final Properties webProperties = InterMineContext.getWebProperties();
         String baseUrl = webProperties.getProperty("webapp.baseurl");
-
         if (StringUtils.isEmpty(baseUrl)) {
             return getCurrentURL(request, contextPath);
         }
-
-        if (request.getServerPort() != 80 && request.getServerPort() != 443) {
+        if (request.getServerPort() != 80 && request.getServerPort() != 443 && request.getServerPort() != 8080) {
             baseUrl += ":" + request.getServerPort();
         }
         String path = webProperties.getProperty("webapp.path");
@@ -78,12 +76,12 @@ public class URLGenerator
 
     // only use if they haven't set up baseURL
     // SH 2/20/18 fix to handle plain HTTPS hosts as well
+    // SH 1/30/24 fix to remove port 8080 now that we're HTTP proxying to that Tomcat port
     private String getCurrentURL(HttpServletRequest request, String contextPath) {
-        String port = "";
-        if (request.getServerPort() != 80 && request.getServerPort() != 443) {
-            port = ":" + request.getServerPort();
+        String ret = request.getScheme() + "://" + request.getServerName();
+        if (request.getServerPort() != 80 && request.getServerPort() != 443 && request.getServerPort() != 8080) {
+            ret = ret + ":" + request.getServerPort();
         }
-        String ret = request.getScheme() + "://" + request.getServerName() + port;
         if (contextPath.length() > 0) {
             ret += contextPath;
         }
