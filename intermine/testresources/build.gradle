@@ -65,7 +65,7 @@ task copyDefaultProperties(type: Copy) {
     into sourceSets.test.output.resourcesDir
     rename { fileName -> fileName.replace("default.intermine.test.properties", "default.intermine.properties") }
 }
-
+/*
 processTestResources {
     dependsOn "copyDefaultProperties"
 
@@ -82,7 +82,7 @@ processTestResources {
 
     inputs.sourceFiles.stopExecutionIfEmpty()
 }
-
+*/
 task buildTestModelJar(type: Jar) {
     from(sourceSets.test.output)
 }
